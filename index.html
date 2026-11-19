@@ -1443,7 +1443,7 @@ function drillTest(u){
     return {n:i+1, title:f.title, rubric:f.rubric, s:[f.title, ...f.prompt.filter(p => !DRILL_PART.test(p))].join('\n\n'),
       parts:f.prompt.filter(p => DRILL_PART.test(p)).map(p => { const l = p.match(DRILL_PART)[1]; return {l, s:p.replace(DRILL_PART, ''), key:keys[l]}; })};
   });
-  return drillTests[u.id] = {id:'rv-'+u.id, unit:u.id, title:`Unit ${u.id} review`, img:{}, mc:u.mcq.map((q, i) => Object.assign(q, {n:i+1})), frq};
+  return drillTests[u.id] = {id:'rv-'+u.id, unit:u.id, title:`Unit ${u.id} homework`, img:{}, mc:u.mcq.map((q, i) => Object.assign(q, {n:i+1})), frq};
 }
 // carry over answers saved before this layout: drill picks (store 'hw', or right/wrong counts in hist) and one-box FRQ text split by part
 function drillMigrate(u, t){
