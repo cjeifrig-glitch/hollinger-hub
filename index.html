@@ -523,6 +523,18 @@ details .body p + p{margin-top:10px}
   @keyframes fill{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.hwtop{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap;margin-top:24px}
+.hwbig{font:400 76px/64px var(--display);letter-spacing:-2px;font-feature-settings:"lnum"}
+.hwbig small{font-size:24px;letter-spacing:0;color:var(--ink2);margin-left:8px}
+.hwread{display:flex;flex-direction:column;gap:4px;padding-bottom:4px}
+.hwread span{color:var(--ink2)}
+.hwstrip{gap:7px}.hwstrip i{width:10px;height:10px}
+.hwidx{margin-top:24px}
+.hwsec{scroll-margin-top:80px}
+.hwsec .qstrip{margin:14px 0 8px}
+.hwft{margin-top:6px;font-size:19px}
+.hwsec .prose p{margin-top:8px;line-height:22px}
+.hwsec textarea.ptta{margin-top:14px}
 </style>
 <div class="app">
   <aside class="side" aria-label="Sidebar">
@@ -1419,6 +1431,102 @@ function ptMC(t, q, pick){
     ${ans? `<div class="why"><div class="verdict ${ok?'ok':'no'}">${ic(ok?'check':'x')}${ok? (q.any? 'Any answer counts here' : 'Correct') : 'The answer is '+L[q.a]}</div>${ptWhy(q, pick)}</div>`
          : `<details class="ptdet"><summary>Show the answer and why</summary><div class="why"><div class="verdict ok">${ic('check')}The answer is ${L[q.a]}</div>${ptWhy(q, null)}</div></details>`}`;
 }
+
+/* ---------- unit Drill tab = every homework question for the unit (lesson drills + unit review MC + free response), practice-test style:
+   answers stay on the page, each pick shows right/wrong and why at once, and the top shows how much is done. Picks live in store 'hw' {qid: choice}. ---------- */
+let HW = null;
+function hwLoad(){
+  if(HW) return HW;
+  HW = store.get('hw', {});
+  // answers made before picks were saved only left right/wrong counts in hist: rebuild a pick from them (right = the key, missed = a wrong choice)
+  let changed = false;
+  const all = UNITS.flatMap(u => u.mcq).concat(LD.flatMap(l => l.qs));
+  all.forEach(q => { const h = hist[q.id]; if(h && HW[q.id]==null){ HW[q.id] = h.right===h.seen? q.a : (q.a+1) % q.o.length; changed = true; } });
+  if(changed) store.set('hw', HW);
+  return HW;
+}
+const hwSave = () => store.set('hw', HW);
+function hwPick(q, i){ hwLoad(); if(HW[q.id]!=null) return; HW[q.id] = i; hwSave(); }
+function hwGroups(u){
+  const g = LD.filter(l => l.unit===u.id).map(l => ({key:'l'+l.n.replace('.','-'), n:l.n, title:l.t, sub:l.focus, qs:l.qs}));
+  if(u.mcq.length) g.push({key:'review', n:'Unit', title:`Unit ${u.id} review`, sub:'Mixed questions on the whole unit.', qs:u.mcq});
+  return g;
+}
+const hwFrqs = u => u.frqs || [u.frq];
+const hwFrqText = (u, i) => store.get('frqtext-'+u.id+'-'+i, '');
+function hwStats(qs){ const d = qs.filter(q => HW[q.id]!=null); return {n:qs.length, done:d.length, right:d.filter(q => HW[q.id]===q.a).length}; }
+const hwDots = qs => `<div class="qstrip hwstrip">${qs.map(q => { const p = HW[q.id]; return `<i class="${p==null? '' : p===q.a? 'ok' : 'miss'}"></i>`; }).join('')}</div>`;
+
+function hwCard(q, num){
+  const L = 'ABCDEFG', pick = HW[q.id], ans = pick!=null, ok = ans && pick===q.a;
+  return `<div class="qmeta"><span class="topic">Question ${num}</span>${ans? `<span class="tab ${ok?'okc':'noc'}">${ok?'Right':'Wrong'}</span>` : ''}</div>
+    <p class="stem">${ptText(q.s)}</p>
+    <div class="opts">${q.o.map((o,i) => { const c = !ans? '' : pick===i? (ok?'pick-right':'pick-wrong') : i===q.a? 'reveal' : 'dim';
+      return `<button class="opt ${c}" data-i="${i}" ${ans?'aria-disabled="true"':''}><span class="k">${ans&&pick===i? ic(ok?'check':'x') : ans&&i===q.a? ic('check') : L[i]}</span><span>${ptText(o)}</span></button>`; }).join('')}</div>
+    ${ans? `<div class="why"><div class="verdict ${ok?'ok':'no'}">${ic(ok?'check':'x')}${ok? 'Correct' : 'The answer is '+L[q.a]}</div><p>${ptText(q.w||'')}</p></div>`
+         : `<details class="ptdet"><summary>Show the answer and why</summary><div class="why"><div class="verdict ok">${ic('check')}The answer is ${L[q.a]}</div><p>${ptText(q.w||'')}</p></div></details>`}`;
+}
+
+function renderUnitHW(u, body){
+  if(run && !run.mixed && run.unit===u.id){ renderQuestion(body); return; }
+  hwLoad();
+  const groups = hwGroups(u), frqs = hwFrqs(u), allQs = groups.flatMap(g => g.qs);
+  const t = hwStats(allQs), fDone = frqs.filter((f,i) => hwFrqText(u,i).trim()).length;
+  const pct = t.done? Math.round(100*t.right/t.done) : 0;
+  let h = `<div class="hwtop">
+    <div class="hwbig"><span class="serif">${t.done}</span><small>of ${t.n}</small></div>
+    <div class="hwread"><b>${t.done===t.n? 'Every question answered' : t.done? 'Questions answered' : 'Nothing answered yet'}</b>
+    <span>${t.done? `${t.right} right, ${pct}%.` : `${plural(groups.length,'set')} from Mr. Hollinger’s homework.`} Free response: ${fDone} of ${frqs.length} written.</span></div></div>
+    ${hwDots(allQs)}
+    <div class="list hwidx">${groups.map(g => { const s = hwStats(g.qs);
+      return `<a class="row two" href="#" data-jump="${g.key}"><span class="d">${esc(g.n)}</span><span class="t">${esc(g.title)}<span class="s">${s.done? `${s.done} of ${s.n} done, ${s.right} right` : `${s.n} questions, not started`}</span></span><span class="v">${s.done===s.n? (s.n? Math.round(100*s.right/s.n)+'%' : '') : s.done+'/'+s.n}</span>${CHEV}</a>`; }).join('')}
+      <a class="row two" href="#" data-jump="frq"><span class="d">FRQ</span><span class="t">Free response<span class="s">${fDone} of ${frqs.length} written</span></span><span class="v">${fDone}/${frqs.length}</span>${CHEV}</a></div>
+    <div class="btns"><button class="btn sec2" id="hwshuffle">${ic('shuffle')}Quiz me on 10 at random</button></div>`;
+
+  groups.forEach(g => { const s = hwStats(g.qs);
+    h += `<section class="sec hwsec" id="hw-${g.key}"><div class="date">${g.key==='review'? 'Unit review' : 'Lesson '+esc(g.n)}</div><h2>${esc(g.title)}</h2>
+      <p class="sub measure">${esc(g.sub||'')}</p><div class="pttally"><span class="hwtally">${s.done? `${s.right} of ${s.done} right so far` : plural(s.n,'question')}</span>${s.done? `<button class="btn plain" data-reset="${g.key}">Start over</button>` : ''}</div>
+      ${hwDots(g.qs)}${g.qs.map((q,i) => `<div class="ptq" data-qid="${q.id}" data-num="${i+1}">${hwCard(q, i+1)}</div>`).join('')}</section>`; });
+
+  h += `<section class="sec hwsec" id="hw-frq"><div class="date">Free response</div><h2>Write it out</h2><p class="sub measure">Answer the way you would on the test, then open the model answer and compare.</p>
+    ${frqs.map((f,i) => `<div class="ptq"><div class="qmeta"><span class="topic">Free response ${i+1}</span>${hwFrqText(u,i).trim()? '<span class="tab okc">Written</span>' : ''}</div><h3 class="hwft">${esc(f.title)}</h3>
+      <div class="prose measure">${f.prompt.map(p => `<p>${esc(p)}</p>`).join('')}</div>
+      <textarea class="ptta" data-f="${i}" rows="6" placeholder="Your answer">${esc(hwFrqText(u,i))}</textarea>
+      <details class="ptdet"><summary>Model answer and what earns the points</summary><div class="ptkey prose">${f.model.map(p => `<p>${esc(p)}</p>`).join('')}<div class="rubric">${f.rubric.map(r => `<div>${esc(r)}</div>`).join('')}</div></div></details></div>`).join('')}
+    <div class="sec tight"><h2>How every FRQ is scored</h2><ul class="ul"><li>Each part is marked <b>E</b>ssentially correct, <b>P</b>artially correct, or <b>I</b>ncorrect, then combined into a score from 0 to 4.</li><li>Answers must be in <b>context</b>: name the variable, the population, the units.</li><li>Never leave a part blank. A partial attempt scores; a blank never does.</li></ul></div></section>`;
+  body.innerHTML = h;
+
+  body.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); const el = body.querySelector('#hw-'+a.dataset.jump); if(el) window.scrollTo({top: el.getBoundingClientRect().top + window.scrollY - 70}); }));
+  body.querySelector('#hwshuffle').addEventListener('click', () => {
+    const unseen = allQs.filter(q => HW[q.id]==null);
+    run = {qs:shuffle(unseen.length>=10? unseen : allQs).slice(0,10), i:0, right:0, answers:[], unit:u.id, mixed:false}; renderQuestion(body); });
+  body.querySelectorAll('.ptq[data-qid]').forEach(card => card.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => {
+    const q = allQs.find(x => x.id===card.dataset.qid); if(HW[q.id]!=null) return;
+    const i = +b.dataset.i; HW[q.id] = i; hwSave();
+    const hh = hist[q.id] || {seen:0, right:0}; hh.seen++; if(i===q.a) hh.right++; hist[q.id] = hh; store.set('hist', hist);
+    card.innerHTML = hwCard(q, card.dataset.num);
+    hwRefresh(u, body, groups, frqs);
+  })));
+  body.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => {
+    if(!b.dataset.arm){ b.dataset.arm = '1'; b.textContent = 'Tap again to clear'; b.classList.add('arm'); return; }
+    const g = groups.find(x => x.key===b.dataset.reset); g.qs.forEach(q => { delete HW[q.id]; delete hist[q.id]; }); hwSave(); store.set('hist', hist);
+    const y = window.scrollY; renderUnitHW(u, body); window.scrollTo({top:y}); }));
+  body.querySelectorAll('textarea[data-f]').forEach(a => a.addEventListener('input', () => { store.set('frqtext-'+u.id+'-'+a.dataset.f, a.value); }));
+}
+// update the counts and dot strips in place after an answer, without moving the page
+function hwRefresh(u, body, groups, frqs){
+  const allQs = groups.flatMap(g => g.qs), t = hwStats(allQs), fDone = frqs.filter((f,i) => hwFrqText(u,i).trim()).length;
+  body.querySelector('.hwbig .serif').textContent = t.done;
+  body.querySelector('.hwread b').textContent = t.done===t.n? 'Every question answered' : 'Questions answered';
+  body.querySelector('.hwread span').textContent = `${t.right} right, ${Math.round(100*t.right/t.done)}%. Free response: ${fDone} of ${frqs.length} written.`;
+  body.querySelector('.hwtop + .qstrip').outerHTML = hwDots(allQs);
+  groups.forEach((g, gi) => { const s = hwStats(g.qs), sec = body.querySelector('#hw-'+g.key);
+    sec.querySelector('.hwtally').textContent = `${s.right} of ${s.done} right so far`;
+    sec.querySelector('.qstrip').outerHTML = hwDots(g.qs);
+    const row = body.querySelectorAll('.hwidx .row')[gi];
+    row.querySelector('.s').textContent = `${s.done} of ${s.n} done, ${s.right} right`;
+    row.querySelector('.v').textContent = s.done===s.n? Math.round(100*s.right/s.n)+'%' : s.done+'/'+s.n; });
+}
 /* ---------- storage ---------- */
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('hh:'+k); return v==null? d : JSON.parse(v); }catch(e){ return d; } },
@@ -1680,8 +1788,8 @@ function wireGo(root){
 }
 
 /* ---------- units ---------- */
-const SUBS = [['cram','Cram card','Cram'],['lessons','Lessons','Lessons'],['drill','Drill','Drill'],['ptest','Practice test','Test'],['frq','Free response','FRQ'],['terms','Terms','Terms'],['last','Last 10 min','Last 10']];
-let unitSel = store.get('unitSel', null), subSel = store.get('subSel', 'cram');
+const SUBS = [['cram','Cram card','Cram'],['lessons','Lessons','Lessons'],['drill','Drill','Drill'],['ptest','Practice test','Test'],['terms','Terms','Terms'],['last','Last 10 min','Last 10']];
+let unitSel = store.get('unitSel', null), subSel = store.get('subSel', 'cram'); if(subSel==='frq') subSel = 'drill';
 const backBtn = () => `<button class="back">${ic('chevron-left')}Units</button>`;
 function renderUnits(){
   unitView = null;
@@ -1705,6 +1813,7 @@ function renderMixed(){
 }
 function renderUnit(id, sub){
   const u = UNITS.find(x => x.id===id); if(!u) return;
+  if(sub==='frq') sub = 'drill';
   unitSel = id; subSel = sub || subSel || 'cram'; store.set('unitSel', unitSel); store.set('subSel', subSel);
   if(run && (run.mixed || run.unit!==id)) run = null;
   unitView = id; syncNav();
@@ -1721,7 +1830,7 @@ function renderUnit(id, sub){
 }
 function renderUnitBody(u){
   const body = document.getElementById('unitbody');
-  ({cram:renderCram, lessons:renderLessons, drill:(u,b) => renderDrillHome(b, u), ptest:renderUnitPT, frq:renderUnitFRQ, terms:renderTerms, last:renderLast})[subSel](u, body);
+  ({cram:renderCram, lessons:renderLessons, drill:renderUnitHW, ptest:renderUnitPT, frq:renderUnitHW, terms:renderTerms, last:renderLast})[subSel](u, body);
 }
 function renderCram(u, body){
   let h = `<div class="h3" style="margin-top:20px">The big idea</div><p class="lead">${esc(u.big)}</p>
@@ -1736,7 +1845,7 @@ function renderCram(u, body){
     if(sec.memorize) c += `<div style="margin-top:6px">${sec.memorize.map(m => `<div class="mem"><div class="t">${esc(m.t)}</div><div class="q">${esc(m.q)}</div></div>`).join('')}</div>`;
     h += head? `<div class="sec">${head}${c}</div>` : `<div style="margin-top:20px">${c}</div>`;
   });
-  h += `<div class="btns" style="margin-top:32px"><button class="btn" data-sub-go="drill">Drill ${plural(u.mcq.length,'question')}</button><button class="btn sec2" data-sub-go="last">Last 10 minutes</button></div>`;
+  h += `<div class="btns" style="margin-top:32px"><button class="btn" data-sub-go="drill">Open the drill</button><button class="btn sec2" data-sub-go="last">Last 10 minutes</button></div>`;
   body.innerHTML = h; wireSubGo(body, u);
 }
 function wireSubGo(body, u){ body.querySelectorAll('[data-sub-go]').forEach(b => b.addEventListener('click', () => renderUnit(u.id, b.dataset.subGo))); }
@@ -1826,7 +1935,7 @@ function answer(i, host){
     if(j===i){ b.classList.add(ok?'pick-right':'pick-wrong'); b.querySelector('.k').innerHTML = ic(ok?'check':'x'); }
     else if(j===q.a) b.classList.add('reveal');
     else b.classList.add('dim'); });
-  const hh = hist[q.id] || {seen:0, right:0}; hh.seen++; if(ok) hh.right++; hist[q.id] = hh; store.set('hist', hist);
+  const hh = hist[q.id] || {seen:0, right:0}; hh.seen++; if(ok) hh.right++; hist[q.id] = hh; store.set('hist', hist); hwPick(q, i);
   if(ok) run.right++; run.answers.push({q, ok});
   const tb = host.querySelector('.qmeta .tab'); if(tb) tb.textContent = `${run.right} right so far`;
   const tk = host.querySelector('.prog .trk i'); if(tk) tk.style.width = ((run.i+1)/run.qs.length*100)+'%';
@@ -1921,7 +2030,7 @@ function renderClass(){
 /* ---------- boot ---------- */
 function route(hs){
   const m = hs.match(/^unit-(\d)(?:-(\w+))?$/);
-  if(m && UNITS.some(u => u.id===+m[1])){ showTab('units'); renderUnit(+m[1], SUBS.some(s => s[0]===m[2])? m[2] : (subSel || 'cram')); return true; }
+  if(m && UNITS.some(u => u.id===+m[1])){ showTab('units'); renderUnit(+m[1], m[2]==='frq'? 'drill' : SUBS.some(s => s[0]===m[2])? m[2] : (subSel || 'cram')); return true; }
   if(hs==='mixed'){ showTab('units'); renderMixed(); return true; }
   if(TABS.includes(hs)){ showTab(hs); return true; }
   return false;
